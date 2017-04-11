@@ -1,3 +1,13 @@
+/*
+ * Join 문이란? 
+ * - 정규화에 의해 물리적으로 분리된 테이블을 마치 하나의 테이블처럼 보여줄 수 있는 쿼리.
+ * 
+ * - inner 조인 : 조인 대상이 되는 테이블간 공통적인 레코드만 가져온다.
+ *                    우리가 지금까지 해왔던 조인
+ *                    주의할 특징) 공통적인 레코드가 아닌 경우, 누락시킨다.
+ * - outter 조인 : 조인 대상이 되는 테이블간 공통된 레코드 뿐만 아니라,
+ *                      지정한 테이블의 레코드는 일단 무조건 다 가져오는 조인
+ */
 package com.paris.main;
 
 import java.awt.BorderLayout;
@@ -9,21 +19,33 @@ import java.awt.Graphics;
 import java.awt.GridBagLayout;
 import java.awt.GridLayout;
 import java.awt.Image;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
 import java.awt.event.ItemEvent;
 import java.awt.event.ItemListener;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.awt.image.BufferedImage;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.sql.Connection;
+import java.sql.ParameterMetaData;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.Vector;
 
 import javax.imageio.ImageIO;
 import javax.swing.JButton;
+import javax.swing.JFileChooser;
 import javax.swing.JFrame;
+import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTable;
@@ -33,7 +55,7 @@ import db.DBManager;
 import db.SubCategory;
 import db.TopCategory;
 
-public class MainWindow extends  JFrame implements ItemListener{
+public class MainWindow extends  JFrame implements ItemListener, ActionListener{
 	
 	JPanel  p_west, p_east, p_center;
 	JPanel p_up, p_down;
@@ -48,7 +70,7 @@ public class MainWindow extends  JFrame implements ItemListener{
 	
 	// east 영역
 	Canvas  can_east;
-	JTextField  t_name2, t_price2;
+	JTextField  t_id, t_name2, t_price2;
 	JButton  bt_edit, bt_delete;
 	
 	DBManager  manager;
@@ -59,6 +81,13 @@ public class MainWindow extends  JFrame implements ItemListener{
 	ArrayList<SubCategory> subList= new ArrayList<SubCategory>();
 	BufferedImage image=null;
 	
+	// Table 모델 객체들
+	UpModel upModel;
+	DownModel  downModel;
+	
+	JFileChooser  chooser;
+	File file;
+	
 	public MainWindow() {
 		p_west = new JPanel();
 		p_center = new JPanel();
@@ -67,7 +96,7 @@ public class MainWindow extends  JFrame implements ItemListener{
 		p_up = new JPanel();
 		p_down = new JPanel();
 		
-		table_up = new JTable(3,6);
+		table_up = new JTable();
 		table_down = new JTable(3,4);
 		
 		scroll_up = new JScrollPane(table_up);
@@ -79,6 +108,8 @@ public class MainWindow extends  JFrame implements ItemListener{
 		t_name = new JTextField(10); 
 		t_price = new JTextField(10);
 		
+		chooser = new JFileChooser("C:/images/");
+		
 		
 		try {
 			URL  url=this.getClass().getResource("/default.png");
@@ -88,15 +119,22 @@ public class MainWindow extends  JFrame implements ItemListener{
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
+
 		can_west = new Canvas(){
 			public void paint(Graphics g) {
-				g.drawImage((Image)image, 0, 0, 135, 135, this);
+				g.drawImage(image, 0, 0, 135, 135, this);
 			}
 		};
 		bt_regist = new JButton("등록");
 		
 		// east 영역
-		can_east = new Canvas();
+		can_east = new Canvas(){
+			public void paint(Graphics g) {
+				g.drawImage(image, 0, 0, 135, 135, this);
+			}
+		};
+		
+		t_id = new JTextField(10);
 		t_name2 = new JTextField(10);
 		t_price2 = new JTextField(10);
 		bt_edit = new JButton("수정"); 
@@ -111,9 +149,11 @@ public class MainWindow extends  JFrame implements ItemListener{
 		p_west.add(bt_regist);
 		
 		// p_east 에 부착
-		p_east.add(can_east);
+		t_id.setEnabled(false);
+		p_east.add(t_id);
 		p_east.add(t_name2);
 		p_east.add(t_price2);
+		p_east.add(can_east);
 		p_east.add(bt_edit);
 		p_east.add(bt_delete);		
 		
@@ -156,6 +196,43 @@ public class MainWindow extends  JFrame implements ItemListener{
 		
 		// 초이스와 리스너 연결
 		ch_top.addItemListener(this);
+		bt_regist.addActionListener(this);
+		
+		// 캐버스에 마우스 리스너 연결
+		can_west.addMouseListener(new MouseAdapter() {
+			public void mouseClicked(MouseEvent e) {
+				preView();
+			}
+		});
+		
+		// 다운 테이블과 리스너 연결
+		table_up.addMouseListener(new MouseAdapter() {
+			public void mouseClicked(MouseEvent e) {
+				int row = table_up.getSelectedRow();
+				int col=0;
+				String subcategory_id = (String)table_up.getValueAt(row, col);
+				System.out.println(subcategory_id);
+				
+				//downModel = new DownModel(con);
+				// 구해진 id 를 아래의 모델에 적용하자
+				downModel.getList(Integer.parseInt(subcategory_id));
+				//table_down.setModel(downModel);
+				table_down.updateUI();
+				//getDownList(Integer.parseInt(subcategory_id));
+			}
+		});
+		
+		table_down.addMouseListener(new MouseAdapter() {
+			public void mouseClicked(MouseEvent e) {
+				int row = table_down.getSelectedRow();
+				
+				// 이차원 백터에 들어 있는 벡터를 얻어오자. 이 백터가 레코드
+				Vector vec = downModel.data.get(row);
+				System.out.println(vec.get(2));
+				
+				getDetail(vec);
+			}
+		} );
 		
 		setTitle("Bread");
 		setSize(850, 700);
@@ -168,6 +245,11 @@ public class MainWindow extends  JFrame implements ItemListener{
 		
 		// TopCategory 가져오기
 		getTop();
+		
+		// TableModel 얻기
+		getUpList();
+		
+		getDownList();
 		
 	}
 	
@@ -213,6 +295,21 @@ public class MainWindow extends  JFrame implements ItemListener{
 		}
 	}
 	
+	// 위쪽 Table 데이터 처리
+	public void getUpList(){
+		System.out.println("getUpList");
+		upModel = new UpModel(con);
+		table_up.setModel(upModel);
+		table_up.updateUI();
+	}
+	
+	public void getDownList(){
+		downModel = new DownModel(con);
+		//downModel.getList(subcategory_id);
+		table_down.setModel(downModel);
+		//table_down.updateUI();
+	}
+	
 	// 하위카테고리 구하기
 	// 바인드 변수 : 구문검사, 객체 검사, 컴파일 불필요
 	public void getSub(){
@@ -226,7 +323,7 @@ public class MainWindow extends  JFrame implements ItemListener{
 			// 담기 전에 지우기
 			subList.removeAll(subList);
 			ch_sub.removeAll();
-			ch_sub.add("▼ 하위카테고리 선택");
+			//ch_sub.add("▼ 하위카테고리 선택");
 			if (index-1 >= 0){
 				TopCategory  dto=topList.get(index-1);
 				pstmt.setInt(1, dto.getToqcategory_id());
@@ -265,6 +362,132 @@ public class MainWindow extends  JFrame implements ItemListener{
 	public void itemStateChanged(ItemEvent e) {
 		// 하위 카테고리 구하기
 		getSub();
+	}
+	
+	/* 상품 등록 */
+	public void regist(){
+		PreparedStatement pstmt = null;
+		String sql="insert into product (product_id, subcategory_id, product_name, price, img)";
+		sql+="values (seq_product.nextval, ?, ?, ?, ?)";
+		try {
+			pstmt = con.prepareStatement(sql);
+			System.out.println(sql);
+			// ArrayList 안에 들어 있는 SubCategory DTO 를 추출
+			SubCategory vo=subList.get(ch_sub.getSelectedIndex());
+			
+			// 바인드 변수에 들어갈 값 결정			
+			System.out.println("vo.getSubcategory_id() = "+vo.getSubcategory_id());
+			pstmt.setInt(1, vo.getSubcategory_id());
+			pstmt.setString(2, t_name.getText());
+			pstmt.setInt(3, Integer.parseInt(t_price.getText()));
+			pstmt.setString(4, file.getName());
+			
+			
+			// excuteUpdate 는 쿼리문 수행후 반영된 레코드의 갯수를 반환해 준다.
+			// 따라서 insert 문의 경우 언제나 성공했다면 1건
+			// update 1건이상, delete 1건 이상
+			// 결론) insert 시 반환값이 0 이라면 insert 실패!			
+			int result = pstmt.executeUpdate();
+			if (result!=0){
+				JOptionPane.showMessageDialog(this, "등록 성공!");
+				
+				// db를 새롭게 가져와 이차원 벡터 변경
+				upModel.getList(); 
+				table_up.updateUI();
+				
+				// 이미지 파일 복사
+				copy();
+				
+			} else {
+				JOptionPane.showMessageDialog(this, "등록 실패!");
+			}
+		} catch (SQLException e) {
+			e.printStackTrace();
+		} finally {
+			if (pstmt!=null)
+				try {
+					pstmt.close();
+				} catch (SQLException e) {
+					e.printStackTrace();
+				}
+		}
+
+	}
+	
+	// 캔버스에 이미지 반영하기.
+	public void preView(){
+		int result = chooser.showOpenDialog(this);
+		if (result == JFileChooser.APPROVE_OPTION){
+			// 캔버스에 이미지 그리자
+			file = chooser.getSelectedFile();
+			// 얻어진 파일을 기존의 이미지로 대체하여 다시 그리기
+			try {
+				image = ImageIO.read(file);
+				can_west.repaint();
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
+		}
+	}
+	
+	// 복사 메서드 정의
+	public void copy(){
+		FileInputStream  fis=null;
+		FileOutputStream  fos=null;
+		
+		try {
+			fis = new  FileInputStream(file);
+			fos = new FileOutputStream("C:/java_workspace2/BreadProject/data/"+file.getName());
+			
+			byte[] b=new byte[1024];
+			int flag; // -1인지 여부 판단.
+			
+			while (true){
+				flag = fis.read(b);
+				//System.out.println("flag="+flag);
+				if (flag==-1) break;
+				fos.write(b);
+			}
+			System.out.println("이미지 복사 완료");
+			
+		} catch (FileNotFoundException e) {
+			e.printStackTrace();
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} finally {
+			if (fos!=null)
+				try {
+					fos.close();
+				} catch (IOException e) {
+					e.printStackTrace();
+				}
+			if (fis!=null)
+				try {
+					fis.close();
+				} catch (IOException e) {
+					e.printStackTrace();
+				}
+		}
+	}
+	
+	// 상세 정보 보여주기
+	// 선택한 제품의 상세정보 보여주기
+	public void getDetail(Vector vec){
+		t_id.setText(vec.get(0).toString());
+		t_name2.setText(vec.get(2).toString());
+		t_price2.setText(vec.get(3).toString());
+		
+		try {
+			image = ImageIO.read(new File("C:/java_workspace2/BreadProject/data/"+vec.get(4)));
+			can_east.repaint();
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+	}
+
+	public void actionPerformed(ActionEvent e) {
+		regist();
 	}
 
 	public static void main(String[] args) {
